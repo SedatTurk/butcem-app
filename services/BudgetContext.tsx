@@ -16,6 +16,7 @@ interface BudgetContextType {
   updateExpense: (id: string, updates: Partial<Expense>) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
   getUpcomingPayments: () => Expense[];
+  getNotifications: () => (Expense & { dueStatus: 'overdue' | 'due_today' | 'upcoming'; diffDays: number })[];
 }
 
 const BudgetContext = createContext<BudgetContextType>({} as BudgetContextType);
@@ -135,13 +136,35 @@ export function BudgetProvider({ children }: { children: ReactNode }) {
       .sort((a, b) => new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime());
   }, [expenses]);
 
+  const getNotifications = useCallback(() => {
+    const today = new Date().getDate();
+    return expenses
+      .filter(e => e.reminderEnabled && !e.isPaid && e.dueDate)
+      .map(e => {
+        const dueDay = parseInt(e.dueDate as string, 10);
+        if (isNaN(dueDay)) return null;
+
+        let status: 'overdue' | 'due_today' | 'upcoming' = 'upcoming';
+        let diff = dueDay - today;
+
+        if (diff < 0) status = 'overdue';
+        else if (diff === 0) status = 'due_today';
+        else status = 'upcoming';
+
+        return { ...e, dueStatus: status, diffDays: diff };
+      })
+      .filter(Boolean)
+      .filter(e => e!.dueStatus !== 'upcoming' || e!.diffDays <= 3) // Sadece 3 gün kalmış veya geçmişler eklensin
+      .sort((a, b) => a!.diffDays - b!.diffDays) as (Expense & { dueStatus: 'overdue' | 'due_today' | 'upcoming'; diffDays: number })[];
+  }, [expenses]);
+
   return (
     <BudgetContext.Provider
       value={{
         incomes, expenses, summary, filter, setFilter,
         addIncome, updateIncome, deleteIncome,
         addExpense, updateExpense, deleteExpense,
-        getUpcomingPayments,
+        getUpcomingPayments, getNotifications,
       }}
     >
       {children}

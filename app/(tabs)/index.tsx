@@ -12,11 +12,11 @@ import SwipeModal from '../../components/SwipeModal';
 
 const { width } = Dimensions.get('window');
 
-type DetailModal = 'transactions' | 'categories' | 'savings' | 'categoryDetail' | null;
+type DetailModal = 'transactions' | 'categories' | 'savings' | 'categoryDetail' | 'notifications' | null;
 
 export default function DashboardScreen() {
   const { user } = useAuth();
-  const { summary, expenses, incomes, getUpcomingPayments } = useBudget();
+  const { summary, expenses, incomes, getUpcomingPayments, getNotifications } = useBudget();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
 
@@ -31,6 +31,7 @@ export default function DashboardScreen() {
   }, []);
 
   const upcomingPayments = getUpcomingPayments();
+  const notifications = getNotifications();
   const healthColor = getBudgetHealthColor(summary.savingsRate);
 
   const balancePercentage = summary.totalIncome > 0
@@ -64,6 +65,14 @@ export default function DashboardScreen() {
               <Text style={styles.userName}>{user?.name || 'Kullanıcı'} 👋</Text>
             </View>
             <View style={styles.headerRight}>
+              <TouchableOpacity onPress={() => setActiveModal('notifications')} style={styles.bellBtn} activeOpacity={0.7}>
+                <Ionicons name="notifications-outline" size={24} color={Colors.textPrimary} />
+                {notifications.length > 0 && (
+                  <View style={styles.bellBadge}>
+                    <Text style={styles.bellBadgeText}>{notifications.length}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
               <View style={[styles.healthBadge, { borderColor: healthColor }]}>
                 <View style={[styles.healthDot, { backgroundColor: healthColor }]} />
                 <Text style={[styles.healthText, { color: healthColor }]}>
@@ -496,6 +505,44 @@ export default function DashboardScreen() {
           );
         })()}
       </SwipeModal>
+      {/* Bildirimler Modal */}
+      <SwipeModal visible={activeModal === 'notifications'} onClose={() => setActiveModal(null)} maxHeightPercent={70}>
+        <View style={styles.modalHeaderRow}>
+          <Ionicons name="notifications-outline" size={26} color={Colors.neonOrange} />
+          <Text style={[styles.modalTitle, { marginTop: 0 }]}>Bildirimler</Text>
+        </View>
+
+        {notifications.length === 0 ? (
+          <View style={styles.modalEmpty}>
+            <Ionicons name="checkmark-circle-outline" size={48} color={Colors.neonGreen} />
+            <Text style={styles.modalEmptyText}>Tüm ödemeleriniz yolunda, bildirim yok!</Text>
+          </View>
+        ) : (
+          <View style={{ gap: Spacing.md, marginTop: Spacing.md }}>
+            {notifications.map((notif, index) => {
+              const isOverdue = notif.dueStatus === 'overdue';
+              const isToday = notif.dueStatus === 'due_today';
+              return (
+                <View key={`${notif.id}-${index}`} style={[styles.catDetailRow, { backgroundColor: Colors.cardBg, borderRadius: BorderRadius.lg, padding: Spacing.md, borderBottomWidth: 0, borderWidth: 1, borderColor: isOverdue ? Colors.danger + '30' : Colors.border }]}>
+                  <View style={[styles.txIcon, { backgroundColor: isOverdue ? Colors.danger + '20' : isToday ? Colors.neonOrange + '20' : Colors.neonCyan + '20' }]}>
+                    <Ionicons name={isOverdue ? 'alert-circle' : isToday ? 'time' : 'calendar'} size={20} color={isOverdue ? Colors.danger : isToday ? Colors.neonOrange : Colors.neonCyan} />
+                  </View>
+                  <View style={styles.txInfo}>
+                    <Text style={styles.txTitle}>{notif.title}</Text>
+                    <Text style={styles.txMeta}>
+                      {isOverdue ? `Ödeme günü ${Math.abs(notif.diffDays)} gün geçti!` : isToday ? 'Son ödeme günü: Bugün' : `Ödemeye son ${notif.diffDays} gün kaldı`}
+                    </Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                     <Text style={[styles.txAmount, { color: isOverdue ? Colors.danger : Colors.textPrimary }]}>{formatCurrency(notif.amount, user?.currency)}</Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </SwipeModal>
+
     </View>
   );
 }
@@ -509,7 +556,20 @@ const styles = StyleSheet.create({
   },
   greeting: { fontSize: FontSize.md, color: Colors.textSecondary },
   userName: { fontSize: FontSize.xxl, fontWeight: '800', color: Colors.textPrimary },
-  headerRight: { alignItems: 'flex-end' },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  bellBtn: {
+    padding: 4, position: 'relative',
+  },
+  bellBadge: {
+    position: 'absolute', top: 2, right: 2,
+    width: 16, height: 16, borderRadius: 8,
+    backgroundColor: Colors.danger,
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 2, borderColor: Colors.background,
+  },
+  bellBadgeText: {
+    fontSize: 9, fontWeight: '800', color: '#fff',
+  },
   healthBadge: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 12, paddingVertical: 6,

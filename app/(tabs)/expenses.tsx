@@ -11,6 +11,7 @@ import { Colors, FontSize, BorderRadius, Spacing, Shadow, CategoryIcons } from '
 import { formatCurrency, getFrequencyLabel } from '../../services/AIEngine';
 import { Expense } from '../../constants/types';
 import SwipeModal, { NumericDoneBar } from '../../components/SwipeModal';
+import CustomSwitch from '../../components/CustomSwitch';
 
 const FREQUENCIES = ['once', 'daily', 'weekly', 'monthly', 'yearly'] as const;
 const FREQ_LABELS: Record<string, string> = {
@@ -32,6 +33,7 @@ export default function ExpensesScreen() {
   const [category, setCategory] = useState('market');
   const [frequency, setFrequency] = useState<typeof FREQUENCIES[number]>('monthly');
   const [dueDay, setDueDay] = useState('');
+  const [reminder, setReminder] = useState(false);
 
   // Düzenleme
   const [showEditModal, setShowEditModal] = useState(false);
@@ -41,6 +43,7 @@ export default function ExpensesScreen() {
   const [editCategory, setEditCategory] = useState('market');
   const [editFrequency, setEditFrequency] = useState<typeof FREQUENCIES[number]>('monthly');
   const [editDueDay, setEditDueDay] = useState('');
+  const [editReminder, setEditReminder] = useState(false);
 
   // Numeric "Tamam" bar visibility
   const [showDoneBar, setShowDoneBar] = useState(false);
@@ -94,10 +97,15 @@ export default function ExpensesScreen() {
       date: new Date().toISOString(),
       dueDate,
       isPaid: false,
-      reminderEnabled: !!dueDate,
+      reminderEnabled: reminder,
     });
     setTitle('');
     setAmount('');
+    setCategory('market');
+    setFrequency('monthly');
+    setDueDay('');
+    setReminder(false);
+    setShowModal(false);
     setCategory('market');
     setFrequency('monthly');
     setDueDay('');
@@ -122,6 +130,7 @@ export default function ExpensesScreen() {
     } else {
       setEditDueDay('');
     }
+    setEditReminder(expense.reminderEnabled || false);
     setShowEditModal(true);
   };
 
@@ -155,7 +164,7 @@ export default function ExpensesScreen() {
       category: editCategory,
       frequency: editFrequency,
       dueDate,
-      reminderEnabled: !!dueDate,
+      reminderEnabled: editReminder,
     });
     setShowEditModal(false);
     setEditingExpense(null);
@@ -168,6 +177,7 @@ export default function ExpensesScreen() {
     setFormTitle: (v: string) => void, setFormAmount: (v: string) => void,
     setFormCategory: (v: string) => void, setFormFrequency: (v: typeof FREQUENCIES[number]) => void,
     setFormDueDay: (v: string) => void,
+    formReminder: boolean, setFormReminder: (v: boolean) => void,
     onSave: () => void,
   ) => (
     <>
@@ -249,6 +259,14 @@ export default function ExpensesScreen() {
           keyboardType="number-pad"
           maxLength={2}
         />
+      </View>
+
+      <View style={[styles.inputGroup, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.sm }]}>
+        <View style={{ flex: 1, paddingRight: Spacing.md }}>
+          <Text style={styles.inputLabel}>Ödeme Hatırlatıcısı</Text>
+          <Text style={{ fontSize: FontSize.xs, color: Colors.textSecondary }}>Bu ödeme yaklaştığında zil kutusunda bildirim göster</Text>
+        </View>
+        <CustomSwitch enabled={formReminder} onToggle={() => setFormReminder(!formReminder)} activeColor={Colors.neonCyan} />
       </View>
 
       {showDoneBar && <NumericDoneBar />}
@@ -366,7 +384,7 @@ export default function ExpensesScreen() {
         {renderForm(
           false, title, amount, category, frequency, dueDay,
           setTitle, setAmount, setCategory, setFrequency, setDueDay,
-          handleAdd,
+          reminder, setReminder, handleAdd,
         )}
       </SwipeModal>
 
@@ -375,7 +393,7 @@ export default function ExpensesScreen() {
         {renderForm(
           true, editTitle, editAmount, editCategory, editFrequency, editDueDay,
           setEditTitle, setEditAmount, setEditCategory, setEditFrequency, setEditDueDay,
-          handleEdit,
+          editReminder, setEditReminder, handleEdit,
         )}
       </SwipeModal>
     </View>
