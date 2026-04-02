@@ -25,7 +25,10 @@ export default function TabLayout() {
         tabBarStyle: styles.tabBar,
         tabBarLabelStyle: styles.tabLabel,
         tabBarItemStyle: styles.tabItem,
-        animation: 'shift',
+        animation: 'none',
+        lazy: false,
+        sceneStyle: { backgroundColor: Colors.background },
+        freezeOnBlur: true,
       }}
     >
       <Tabs.Screen

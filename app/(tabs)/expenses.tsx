@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput,
-  Modal, Alert, Animated, Platform,
+  Alert, Animated, Platform, Keyboard,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,6 +9,8 @@ import { useAuth } from '../../services/AuthContext';
 import { useBudget } from '../../services/BudgetContext';
 import { Colors, FontSize, BorderRadius, Spacing, Shadow, CategoryIcons } from '../../constants/theme';
 import { formatCurrency, getFrequencyLabel } from '../../services/AIEngine';
+import { Expense } from '../../constants/types';
+import SwipeModal, { NumericDoneBar } from '../../components/SwipeModal';
 
 const FREQUENCIES = ['once', 'daily', 'weekly', 'monthly', 'yearly'] as const;
 const FREQ_LABELS: Record<string, string> = {
@@ -23,7 +25,7 @@ const CATEGORIES = Object.keys(CategoryIcons);
 
 export default function ExpensesScreen() {
   const { user } = useAuth();
-  const { expenses, addExpense, deleteExpense, summary } = useBudget();
+  const { expenses, addExpense, deleteExpense, updateExpense, summary } = useBudget();
   const [showModal, setShowModal] = useState(false);
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
@@ -31,13 +33,38 @@ export default function ExpensesScreen() {
   const [frequency, setFrequency] = useState<typeof FREQUENCIES[number]>('monthly');
   const [dueDay, setDueDay] = useState('');
 
+  // Düzenleme
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editAmount, setEditAmount] = useState('');
+  const [editCategory, setEditCategory] = useState('market');
+  const [editFrequency, setEditFrequency] = useState<typeof FREQUENCIES[number]>('monthly');
+  const [editDueDay, setEditDueDay] = useState('');
+
+  // Numeric "Tamam" bar visibility
+  const [showDoneBar, setShowDoneBar] = useState(false);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  React.useEffect(() => {
+  useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
   }, []);
 
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => setShowDoneBar(true)
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setShowDoneBar(false)
+    );
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+
   const handleAdd = async () => {
+    Keyboard.dismiss();
     if (!title.trim() || !amount.trim()) {
       Alert.alert('Hata', 'Lütfen tüm alanları doldurun.');
       return;
@@ -84,17 +111,175 @@ export default function ExpensesScreen() {
     ]);
   };
 
+  const openEdit = (expense: Expense) => {
+    setEditingExpense(expense);
+    setEditTitle(expense.title);
+    setEditAmount(expense.amount.toString());
+    setEditCategory(expense.category);
+    setEditFrequency(expense.frequency as typeof FREQUENCIES[number]);
+    if (expense.dueDate) {
+      setEditDueDay(new Date(expense.dueDate).getDate().toString());
+    } else {
+      setEditDueDay('');
+    }
+    setShowEditModal(true);
+  };
+
+  const handleEdit = async () => {
+    Keyboard.dismiss();
+    if (!editingExpense) return;
+    if (!editTitle.trim() || !editAmount.trim()) {
+      Alert.alert('Hata', 'Lütfen tüm alanları doldurun.');
+      return;
+    }
+    const numAmount = parseFloat(editAmount.replace(',', '.'));
+    if (isNaN(numAmount) || numAmount <= 0) {
+      Alert.alert('Hata', 'Geçerli bir tutar girin.');
+      return;
+    }
+
+    let dueDate: string | undefined;
+    if (editDueDay.trim()) {
+      const day = parseInt(editDueDay);
+      if (day >= 1 && day <= 31) {
+        const now = new Date();
+        const due = new Date(now.getFullYear(), now.getMonth(), day);
+        if (due < now) due.setMonth(due.getMonth() + 1);
+        dueDate = due.toISOString();
+      }
+    }
+
+    await updateExpense(editingExpense.id, {
+      title: editTitle.trim(),
+      amount: numAmount,
+      category: editCategory,
+      frequency: editFrequency,
+      dueDate,
+      reminderEnabled: !!dueDate,
+    });
+    setShowEditModal(false);
+    setEditingExpense(null);
+  };
+
+  const renderForm = (
+    isEdit: boolean,
+    formTitle: string, formAmount: string, formCategory: string,
+    formFrequency: typeof FREQUENCIES[number], formDueDay: string,
+    setFormTitle: (v: string) => void, setFormAmount: (v: string) => void,
+    setFormCategory: (v: string) => void, setFormFrequency: (v: typeof FREQUENCIES[number]) => void,
+    setFormDueDay: (v: string) => void,
+    onSave: () => void,
+  ) => (
+    <>
+      <Text style={styles.modalTitle}>{isEdit ? 'Gider Düzenle' : 'Gider Ekle'}</Text>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Gider Adı</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Örn: Ev kirası, Elektrik..."
+          placeholderTextColor={Colors.textMuted}
+          value={formTitle}
+          onChangeText={setFormTitle}
+          returnKeyType="next"
+        />
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Tutar ({user?.currency || '₺'})</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="0"
+          placeholderTextColor={Colors.textMuted}
+          value={formAmount}
+          onChangeText={setFormAmount}
+          keyboardType="decimal-pad"
+        />
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Kategori</Text>
+        <View style={styles.categoryGrid}>
+          {CATEGORIES.map(cat => {
+            const info = CategoryIcons[cat];
+            return (
+              <TouchableOpacity
+                key={cat}
+                style={[
+                  styles.categoryBtn,
+                  formCategory === cat && { borderColor: info.color, backgroundColor: info.color + '15' },
+                ]}
+                onPress={() => { Keyboard.dismiss(); setFormCategory(cat); }}
+              >
+                <Ionicons name={info.icon as any} size={16} color={formCategory === cat ? info.color : Colors.textMuted} />
+                <Text style={[styles.categoryBtnText, formCategory === cat && { color: info.color }]}>
+                  {info.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Sıklık</Text>
+        <View style={styles.freqRow}>
+          {FREQUENCIES.map(f => (
+            <TouchableOpacity
+              key={f}
+              style={[styles.freqBtn, formFrequency === f && styles.freqBtnActive]}
+              onPress={() => { Keyboard.dismiss(); setFormFrequency(f); }}
+            >
+              <Text style={[styles.freqBtnText, formFrequency === f && styles.freqBtnTextActive]}>
+                {FREQ_LABELS[f]}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Ödeme Günü (opsiyonel)</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Örn: 15 (ayın 15'i)"
+          placeholderTextColor={Colors.textMuted}
+          value={formDueDay}
+          onChangeText={setFormDueDay}
+          keyboardType="number-pad"
+          maxLength={2}
+        />
+      </View>
+
+      {showDoneBar && <NumericDoneBar />}
+
+      <View style={styles.modalActions}>
+        <TouchableOpacity onPress={onSave} activeOpacity={0.8} style={{ flex: 1 }}>
+          <LinearGradient
+            colors={isEdit ? [Colors.neonGreen + 'DD', Colors.neonGreen] : [Colors.gradientPurpleStart, Colors.neonPurple]}
+            style={styles.saveBtn}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+          >
+            <Ionicons name="checkmark" size={18} color={isEdit ? '#000' : '#fff'} style={{ marginRight: 6 }} />
+            <Text style={[styles.saveBtnText, isEdit && { color: '#000' }]}>
+              {isEdit ? 'Güncelle' : 'Kaydet'}
+            </Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
+    </>
+  );
+
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <Animated.View style={{ opacity: fadeAnim }}>
-          {/* Header */}
           <View style={styles.header}>
             <Text style={styles.title}>Giderler</Text>
             <Text style={styles.subtitle}>Harcamalarınızı takip edin</Text>
           </View>
 
-          {/* Total Expense Card */}
           <LinearGradient
             colors={['rgba(255,61,110,0.12)', 'rgba(255,61,110,0.03)']}
             style={styles.totalCard}
@@ -112,7 +297,6 @@ export default function ExpensesScreen() {
             </View>
           </LinearGradient>
 
-          {/* Expense List */}
           {expenses.length > 0 ? (
             <View style={styles.list}>
               {expenses.map((expense) => {
@@ -120,7 +304,7 @@ export default function ExpensesScreen() {
                   icon: 'ellipsis-horizontal', color: Colors.neonPurple, label: expense.category,
                 };
                 return (
-                  <View key={expense.id} style={styles.expenseCard}>
+                  <TouchableOpacity key={expense.id} style={styles.expenseCard} onPress={() => openEdit(expense)} activeOpacity={0.6}>
                     <View style={[styles.catIconBg, { backgroundColor: catInfo.color + '20' }]}>
                       <Ionicons name={catInfo.icon as any} size={20} color={catInfo.color} />
                     </View>
@@ -132,6 +316,10 @@ export default function ExpensesScreen() {
                         </Text>
                         <Text style={styles.expenseDot}>•</Text>
                         <Text style={styles.expenseFreq}>{getFrequencyLabel(expense.frequency)}</Text>
+                        <View style={styles.editHint}>
+                          <Ionicons name="pencil" size={10} color={Colors.neonPurple} />
+                          <Text style={styles.editHintText}>Düzenle</Text>
+                        </View>
                       </View>
                     </View>
                     <Text style={styles.expenseAmount}>
@@ -143,7 +331,7 @@ export default function ExpensesScreen() {
                     >
                       <Ionicons name="trash-outline" size={18} color={Colors.danger} />
                     </TouchableOpacity>
-                  </View>
+                  </TouchableOpacity>
                 );
               })}
             </View>
@@ -174,112 +362,22 @@ export default function ExpensesScreen() {
       </TouchableOpacity>
 
       {/* Add Modal */}
-      <Modal visible={showModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <ScrollView
-            style={styles.modalScroll}
-            contentContainerStyle={styles.modalScrollContent}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.modalContent}>
-              <View style={styles.modalHandle} />
-              <Text style={styles.modalTitle}>Gider Ekle</Text>
+      <SwipeModal visible={showModal} onClose={() => setShowModal(false)}>
+        {renderForm(
+          false, title, amount, category, frequency, dueDay,
+          setTitle, setAmount, setCategory, setFrequency, setDueDay,
+          handleAdd,
+        )}
+      </SwipeModal>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Gider Adı</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Örn: Ev kirası, Elektrik..."
-                  placeholderTextColor={Colors.textMuted}
-                  value={title}
-                  onChangeText={setTitle}
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Tutar ({user?.currency || '₺'})</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="0"
-                  placeholderTextColor={Colors.textMuted}
-                  value={amount}
-                  onChangeText={setAmount}
-                  keyboardType="decimal-pad"
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Kategori</Text>
-                <View style={styles.categoryGrid}>
-                  {CATEGORIES.map(cat => {
-                    const info = CategoryIcons[cat];
-                    return (
-                      <TouchableOpacity
-                        key={cat}
-                        style={[
-                          styles.categoryBtn,
-                          category === cat && { borderColor: info.color, backgroundColor: info.color + '15' },
-                        ]}
-                        onPress={() => setCategory(cat)}
-                      >
-                        <Ionicons name={info.icon as any} size={16} color={category === cat ? info.color : Colors.textMuted} />
-                        <Text style={[styles.categoryBtnText, category === cat && { color: info.color }]}>
-                          {info.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Sıklık</Text>
-                <View style={styles.freqRow}>
-                  {FREQUENCIES.map(f => (
-                    <TouchableOpacity
-                      key={f}
-                      style={[styles.freqBtn, frequency === f && styles.freqBtnActive]}
-                      onPress={() => setFrequency(f)}
-                    >
-                      <Text style={[styles.freqBtnText, frequency === f && styles.freqBtnTextActive]}>
-                        {FREQ_LABELS[f]}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Ödeme Günü (opsiyonel, hatırlatma için)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Örn: 15 (ayın 15'i)"
-                  placeholderTextColor={Colors.textMuted}
-                  value={dueDay}
-                  onChangeText={setDueDay}
-                  keyboardType="number-pad"
-                  maxLength={2}
-                />
-              </View>
-
-              <View style={styles.modalActions}>
-                <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowModal(false)}>
-                  <Text style={styles.cancelBtnText}>İptal</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleAdd} activeOpacity={0.8}>
-                  <LinearGradient
-                    colors={[Colors.gradientPurpleStart, Colors.neonPurple]}
-                    style={styles.saveBtn}
-                  >
-                    <Text style={styles.saveBtnText}>Kaydet</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </ScrollView>
-        </View>
-      </Modal>
+      {/* Edit Modal */}
+      <SwipeModal visible={showEditModal} onClose={() => setShowEditModal(false)}>
+        {renderForm(
+          true, editTitle, editAmount, editCategory, editFrequency, editDueDay,
+          setEditTitle, setEditAmount, setEditCategory, setEditFrequency, setEditDueDay,
+          handleEdit,
+        )}
+      </SwipeModal>
     </View>
   );
 }
@@ -320,6 +418,12 @@ const styles = StyleSheet.create({
   expenseCategory: { fontSize: FontSize.xs, fontWeight: '600' },
   expenseDot: { fontSize: FontSize.xs, color: Colors.textMuted },
   expenseFreq: { fontSize: FontSize.xs, color: Colors.textSecondary },
+  editHint: {
+    flexDirection: 'row', alignItems: 'center', gap: 3, marginLeft: 4,
+    paddingHorizontal: 6, paddingVertical: 1,
+    borderRadius: 6, backgroundColor: Colors.neonPurple + '15',
+  },
+  editHintText: { fontSize: 10, color: Colors.neonPurple, fontWeight: '500' },
   expenseAmount: { fontSize: FontSize.md, fontWeight: '700', color: Colors.danger },
   deleteBtn: { padding: Spacing.sm },
   fab: {
@@ -331,20 +435,10 @@ const styles = StyleSheet.create({
   emptyState: { alignItems: 'center', paddingVertical: 60, gap: Spacing.md },
   emptyTitle: { fontSize: FontSize.lg, fontWeight: '600', color: Colors.textSecondary },
   emptyText: { fontSize: FontSize.md, color: Colors.textMuted, textAlign: 'center', paddingHorizontal: 40 },
-  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
-  modalScroll: { maxHeight: '90%' },
-  modalScrollContent: { flexGrow: 1, justifyContent: 'flex-end' },
-  modalContent: {
-    backgroundColor: Colors.backgroundLight,
-    borderTopLeftRadius: BorderRadius.xxl, borderTopRightRadius: BorderRadius.xxl,
-    padding: Spacing.xxl, paddingBottom: Platform.OS === 'ios' ? 40 : Spacing.xxl,
-  },
-  modalHandle: {
-    width: 40, height: 4, borderRadius: 2,
-    backgroundColor: Colors.textMuted, alignSelf: 'center', marginBottom: Spacing.xl,
-  },
-  modalTitle: { fontSize: FontSize.xl, fontWeight: '700', color: Colors.textPrimary, marginBottom: Spacing.xxl },
-  inputGroup: { marginBottom: Spacing.xl },
+
+  // Modal Form
+  modalTitle: { fontSize: FontSize.xl, fontWeight: '700', color: Colors.textPrimary, marginBottom: Spacing.xl, marginTop: Spacing.sm },
+  inputGroup: { marginBottom: Spacing.lg },
   inputLabel: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textSecondary, marginBottom: Spacing.sm },
   input: {
     backgroundColor: Colors.cardBg, borderRadius: BorderRadius.md,
@@ -360,23 +454,17 @@ const styles = StyleSheet.create({
   categoryBtnText: { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: '500' },
   freqRow: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
   freqBtn: {
-    paddingHorizontal: 14, paddingVertical: Spacing.md, borderRadius: BorderRadius.md,
+    paddingHorizontal: 14, paddingVertical: 10, borderRadius: BorderRadius.md,
     backgroundColor: Colors.cardBg, alignItems: 'center',
     borderWidth: 1, borderColor: Colors.border,
   },
   freqBtnActive: { borderColor: Colors.neonPurple, backgroundColor: Colors.neonPurple + '20' },
   freqBtnText: { fontSize: FontSize.sm, color: Colors.textMuted, fontWeight: '500' },
   freqBtnTextActive: { color: Colors.neonPurple },
-  modalActions: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.lg },
-  cancelBtn: {
-    flex: 1, paddingVertical: Spacing.lg, borderRadius: BorderRadius.lg,
-    backgroundColor: Colors.cardBg, alignItems: 'center',
-    borderWidth: 1, borderColor: Colors.border,
-  },
-  cancelBtnText: { fontSize: FontSize.md, fontWeight: '600', color: Colors.textSecondary },
+  modalActions: { marginTop: Spacing.xl },
   saveBtn: {
-    flex: 1, paddingVertical: Spacing.lg, borderRadius: BorderRadius.lg,
-    alignItems: 'center',
+    height: 50, borderRadius: BorderRadius.lg,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
   },
   saveBtnText: { fontSize: FontSize.md, fontWeight: '700', color: '#fff' },
 });

@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, Animated, Alert, Dimensions,
+  ScrollView, TouchableWithoutFeedback, Keyboard,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -59,6 +60,8 @@ export default function LoginScreen() {
     }
   };
 
+  const passwordRef = useRef<TextInput>(null);
+
   return (
     <View style={styles.container}>
       {/* Neon glow circles */}
@@ -70,86 +73,101 @@ export default function LoginScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
       >
-        {/* Logo */}
-        <Animated.View style={[styles.logoContainer, { transform: [{ scale: logoScale }] }]}>
-          <LinearGradient
-            colors={[Colors.gradientPurpleStart, Colors.gradientPurpleEnd]}
-            style={styles.logoGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            bounces={false}
           >
-            <Ionicons name="wallet" size={44} color="#fff" />
-          </LinearGradient>
-          <Text style={styles.appName}>BütçeM</Text>
-          <Text style={styles.tagline}>Akıllı Bütçe Yönetimi</Text>
-        </Animated.View>
+            {/* Logo */}
+            <Animated.View style={[styles.logoContainer, { transform: [{ scale: logoScale }] }]}>
+              <LinearGradient
+                colors={[Colors.gradientPurpleStart, Colors.gradientPurpleEnd]}
+                style={styles.logoGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <Ionicons name="wallet" size={44} color="#fff" />
+              </LinearGradient>
+              <Text style={styles.appName}>BütçeM</Text>
+              <Text style={styles.tagline}>Akıllı Bütçe Yönetimi</Text>
+            </Animated.View>
 
-        {/* Form */}
-        <Animated.View
-          style={[
-            styles.formContainer,
-            { opacity: formOpacity, transform: [{ translateY: formTranslate }] },
-          ]}
-        >
-          <View style={styles.inputContainer}>
-            <Ionicons name="mail-outline" size={20} color={Colors.textMuted} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="E-posta adresiniz"
-              placeholderTextColor={Colors.textMuted}
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Ionicons name="lock-closed-outline" size={20} color={Colors.textMuted} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Şifreniz"
-              placeholderTextColor={Colors.textMuted}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-            />
-            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
-              <Ionicons
-                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                size={20}
-                color={Colors.textMuted}
-              />
-            </TouchableOpacity>
-          </View>
-
-          <TouchableOpacity onPress={handleLogin} disabled={isLoading} activeOpacity={0.8}>
-            <LinearGradient
-              colors={[Colors.gradientPurpleStart, Colors.neonPurple]}
-              style={styles.loginButton}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
+            {/* Form */}
+            <Animated.View
+              style={[
+                styles.formContainer,
+                { opacity: formOpacity, transform: [{ translateY: formTranslate }] },
+              ]}
             >
-              {isLoading ? (
-                <Text style={styles.loginButtonText}>Giriş yapılıyor...</Text>
-              ) : (
-                <>
-                  <Text style={styles.loginButtonText}>Giriş Yap</Text>
-                  <Ionicons name="arrow-forward" size={20} color="#fff" />
-                </>
-              )}
-            </LinearGradient>
-          </TouchableOpacity>
+              <View style={styles.inputContainer}>
+                <Ionicons name="mail-outline" size={20} color={Colors.textMuted} style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="E-posta adresiniz"
+                  placeholderTextColor={Colors.textMuted}
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  returnKeyType="next"
+                  onSubmitEditing={() => passwordRef.current?.focus()}
+                  blurOnSubmit={false}
+                />
+              </View>
 
-          <TouchableOpacity
-            style={styles.registerLink}
-            onPress={() => router.push('/(auth)/register')}
-          >
-            <Text style={styles.registerText}>
-              Hesabınız yok mu? <Text style={styles.registerHighlight}>Kayıt Olun</Text>
-            </Text>
-          </TouchableOpacity>
-        </Animated.View>
+              <View style={styles.inputContainer}>
+                <Ionicons name="lock-closed-outline" size={20} color={Colors.textMuted} style={styles.inputIcon} />
+                <TextInput
+                  ref={passwordRef}
+                  style={styles.input}
+                  placeholder="Şifreniz"
+                  placeholderTextColor={Colors.textMuted}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  returnKeyType="go"
+                  onSubmitEditing={handleLogin}
+                />
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
+                  <Ionicons
+                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={20}
+                    color={Colors.textMuted}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity onPress={handleLogin} disabled={isLoading} activeOpacity={0.8}>
+                <LinearGradient
+                  colors={[Colors.gradientPurpleStart, Colors.neonPurple]}
+                  style={styles.loginButton}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                >
+                  {isLoading ? (
+                    <Text style={styles.loginButtonText}>Giriş yapılıyor...</Text>
+                  ) : (
+                    <>
+                      <Text style={styles.loginButtonText}>Giriş Yap</Text>
+                      <Ionicons name="arrow-forward" size={20} color="#fff" />
+                    </>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.registerLink}
+                onPress={() => router.push('/(auth)/register')}
+              >
+                <Text style={styles.registerText}>
+                  Hesabınız yok mu? <Text style={styles.registerHighlight}>Kayıt Olun</Text>
+                </Text>
+              </TouchableOpacity>
+            </Animated.View>
+          </ScrollView>
+        </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
     </View>
   );
@@ -193,8 +211,12 @@ const styles = StyleSheet.create({
   },
   keyboardView: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
     paddingHorizontal: Spacing.xxl,
+    paddingVertical: 40,
   },
   logoContainer: {
     alignItems: 'center',

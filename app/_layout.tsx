@@ -30,10 +30,10 @@ function RootLayoutNav() {
   }
 
   return (
-    <>
+    <View style={{ flex: 1, backgroundColor: Colors.background }}>
       <StatusBar style="light" />
       <Slot />
-    </>
+    </View>
   );
 }
 

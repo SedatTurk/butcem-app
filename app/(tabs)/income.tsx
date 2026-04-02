@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput,
-  Modal, Alert, Animated, Platform,
+  Alert, Animated, Platform, Keyboard,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,6 +9,8 @@ import { useAuth } from '../../services/AuthContext';
 import { useBudget } from '../../services/BudgetContext';
 import { Colors, FontSize, BorderRadius, Spacing, Shadow } from '../../constants/theme';
 import { formatCurrency, getFrequencyLabel } from '../../services/AIEngine';
+import { Income } from '../../constants/types';
+import SwipeModal, { NumericDoneBar } from '../../components/SwipeModal';
 
 const FREQUENCIES = ['daily', 'weekly', 'monthly', 'yearly'] as const;
 const FREQ_LABELS: Record<string, string> = {
@@ -26,13 +28,36 @@ export default function IncomeScreen() {
   const [amount, setAmount] = useState('');
   const [frequency, setFrequency] = useState<typeof FREQUENCIES[number]>('monthly');
 
+  // Düzenleme
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingIncome, setEditingIncome] = useState<Income | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editAmount, setEditAmount] = useState('');
+  const [editFrequency, setEditFrequency] = useState<typeof FREQUENCIES[number]>('monthly');
+
+  // Numeric "Tamam" bar visibility
+  const [showDoneBar, setShowDoneBar] = useState(false);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  React.useEffect(() => {
+  useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
   }, []);
 
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => setShowDoneBar(true)
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setShowDoneBar(false)
+    );
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+
   const handleAdd = async () => {
+    Keyboard.dismiss();
     if (!title.trim() || !amount.trim()) {
       Alert.alert('Hata', 'Lütfen tüm alanları doldurun.');
       return;
@@ -66,17 +91,115 @@ export default function IncomeScreen() {
     await updateIncome(id, { isActive: !isActive });
   };
 
+  const openEdit = (income: Income) => {
+    setEditingIncome(income);
+    setEditTitle(income.title);
+    setEditAmount(income.amount.toString());
+    setEditFrequency(income.frequency as typeof FREQUENCIES[number]);
+    setShowEditModal(true);
+  };
+
+  const handleEdit = async () => {
+    Keyboard.dismiss();
+    if (!editingIncome) return;
+    if (!editTitle.trim() || !editAmount.trim()) {
+      Alert.alert('Hata', 'Lütfen tüm alanları doldurun.');
+      return;
+    }
+    const numAmount = parseFloat(editAmount.replace(',', '.'));
+    if (isNaN(numAmount) || numAmount <= 0) {
+      Alert.alert('Hata', 'Geçerli bir tutar girin.');
+      return;
+    }
+    await updateIncome(editingIncome.id, {
+      title: editTitle.trim(),
+      amount: numAmount,
+      frequency: editFrequency,
+    });
+    setShowEditModal(false);
+    setEditingIncome(null);
+  };
+
+  const renderForm = (
+    isEdit: boolean,
+    formTitle: string, formAmount: string, formFrequency: typeof FREQUENCIES[number],
+    setFormTitle: (v: string) => void, setFormAmount: (v: string) => void,
+    setFormFrequency: (v: typeof FREQUENCIES[number]) => void,
+    onSave: () => void,
+  ) => (
+    <>
+      <Text style={styles.modalTitle}>{isEdit ? 'Gelir Düzenle' : 'Gelir Ekle'}</Text>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Gelir Adı</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Örn: Maaş, Freelance..."
+          placeholderTextColor={Colors.textMuted}
+          value={formTitle}
+          onChangeText={setFormTitle}
+          returnKeyType="next"
+        />
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Tutar ({user?.currency || '₺'})</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="0"
+          placeholderTextColor={Colors.textMuted}
+          value={formAmount}
+          onChangeText={setFormAmount}
+          keyboardType="decimal-pad"
+        />
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Sıklık</Text>
+        <View style={styles.freqRow}>
+          {FREQUENCIES.map(f => (
+            <TouchableOpacity
+              key={f}
+              style={[styles.freqBtn, formFrequency === f && styles.freqBtnActive]}
+              onPress={() => { Keyboard.dismiss(); setFormFrequency(f); }}
+            >
+              <Text style={[styles.freqBtnText, formFrequency === f && styles.freqBtnTextActive]}>
+                {FREQ_LABELS[f]}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      {showDoneBar && <NumericDoneBar />}
+
+      <View style={styles.modalActions}>
+        <TouchableOpacity onPress={onSave} activeOpacity={0.8} style={{ flex: 1 }}>
+          <LinearGradient
+            colors={isEdit ? [Colors.neonGreen + 'DD', Colors.neonGreen] : [Colors.gradientPurpleStart, Colors.neonPurple]}
+            style={styles.saveBtn}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+          >
+            <Ionicons name="checkmark" size={18} color={isEdit ? '#000' : '#fff'} style={{ marginRight: 6 }} />
+            <Text style={[styles.saveBtnText, isEdit && { color: '#000' }]}>
+              {isEdit ? 'Güncelle' : 'Kaydet'}
+            </Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
+    </>
+  );
+
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <Animated.View style={{ opacity: fadeAnim }}>
-          {/* Header */}
           <View style={styles.header}>
             <Text style={styles.title}>Gelirler</Text>
             <Text style={styles.subtitle}>Gelir kaynaklarınızı yönetin</Text>
           </View>
 
-          {/* Total Income Card */}
           <LinearGradient
             colors={['rgba(0,255,136,0.12)', 'rgba(0,255,136,0.03)']}
             style={styles.totalCard}
@@ -94,7 +217,6 @@ export default function IncomeScreen() {
             </View>
           </LinearGradient>
 
-          {/* Income List */}
           {incomes.length > 0 ? (
             <View style={styles.list}>
               {incomes.map((income) => (
@@ -109,12 +231,18 @@ export default function IncomeScreen() {
                       color={income.isActive ? Colors.neonGreen : Colors.textMuted}
                     />
                   </TouchableOpacity>
-                  <View style={styles.incomeInfo}>
+                  <TouchableOpacity style={styles.incomeInfo} onPress={() => openEdit(income)} activeOpacity={0.6}>
                     <Text style={[styles.incomeName, !income.isActive && styles.inactiveText]}>
                       {income.title}
                     </Text>
-                    <Text style={styles.incomeFreq}>{getFrequencyLabel(income.frequency)}</Text>
-                  </View>
+                    <View style={styles.incomeMetaRow}>
+                      <Text style={styles.incomeFreq}>{getFrequencyLabel(income.frequency)}</Text>
+                      <View style={styles.editHint}>
+                        <Ionicons name="pencil" size={10} color={Colors.neonPurple} />
+                        <Text style={styles.editHintText}>Düzenle</Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
                   <Text style={[styles.incomeAmount, !income.isActive && styles.inactiveText]}>
                     +{formatCurrency(income.amount, user?.currency)}
                   </Text>
@@ -154,68 +282,14 @@ export default function IncomeScreen() {
       </TouchableOpacity>
 
       {/* Add Modal */}
-      <Modal visible={showModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Gelir Ekle</Text>
+      <SwipeModal visible={showModal} onClose={() => setShowModal(false)}>
+        {renderForm(false, title, amount, frequency, setTitle, setAmount, setFrequency, handleAdd)}
+      </SwipeModal>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Gelir Adı</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Örn: Maaş, Freelance..."
-                placeholderTextColor={Colors.textMuted}
-                value={title}
-                onChangeText={setTitle}
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Tutar ({user?.currency || '₺'})</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="0"
-                placeholderTextColor={Colors.textMuted}
-                value={amount}
-                onChangeText={setAmount}
-                keyboardType="decimal-pad"
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Sıklık</Text>
-              <View style={styles.freqRow}>
-                {FREQUENCIES.map(f => (
-                  <TouchableOpacity
-                    key={f}
-                    style={[styles.freqBtn, frequency === f && styles.freqBtnActive]}
-                    onPress={() => setFrequency(f)}
-                  >
-                    <Text style={[styles.freqBtnText, frequency === f && styles.freqBtnTextActive]}>
-                      {FREQ_LABELS[f]}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowModal(false)}>
-                <Text style={styles.cancelBtnText}>İptal</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleAdd} activeOpacity={0.8}>
-                <LinearGradient
-                  colors={[Colors.gradientPurpleStart, Colors.neonPurple]}
-                  style={styles.saveBtn}
-                >
-                  <Text style={styles.saveBtnText}>Kaydet</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      {/* Edit Modal */}
+      <SwipeModal visible={showEditModal} onClose={() => setShowEditModal(false)}>
+        {renderForm(true, editTitle, editAmount, editFrequency, setEditTitle, setEditAmount, setEditFrequency, handleEdit)}
+      </SwipeModal>
     </View>
   );
 }
@@ -227,12 +301,9 @@ const styles = StyleSheet.create({
   title: { fontSize: FontSize.xxxl, fontWeight: '800', color: Colors.textPrimary },
   subtitle: { fontSize: FontSize.md, color: Colors.textSecondary, marginTop: Spacing.xs },
   totalCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: Spacing.xl,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    borderColor: Colors.neonGreen + '30',
+    flexDirection: 'row', alignItems: 'center',
+    padding: Spacing.xl, borderRadius: BorderRadius.lg,
+    borderWidth: 1, borderColor: Colors.neonGreen + '30',
     marginBottom: Spacing.xxl,
   },
   totalLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
@@ -253,7 +324,14 @@ const styles = StyleSheet.create({
   toggleBtn: { padding: 2 },
   incomeInfo: { flex: 1 },
   incomeName: { fontSize: FontSize.md, fontWeight: '600', color: Colors.textPrimary },
-  incomeFreq: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2 },
+  incomeFreq: { fontSize: FontSize.sm, color: Colors.textSecondary },
+  incomeMetaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 3, gap: 8 },
+  editHint: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    paddingHorizontal: 6, paddingVertical: 1,
+    borderRadius: 6, backgroundColor: Colors.neonPurple + '15',
+  },
+  editHintText: { fontSize: 10, color: Colors.neonPurple, fontWeight: '500' },
   incomeAmount: { fontSize: FontSize.md, fontWeight: '700', color: Colors.neonGreen },
   inactiveText: { color: Colors.textMuted },
   deleteBtn: { padding: Spacing.sm },
@@ -263,26 +341,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
     ...Shadow.neonPurple,
   },
-  emptyState: {
-    alignItems: 'center', paddingVertical: 60, gap: Spacing.md,
-  },
+  emptyState: { alignItems: 'center', paddingVertical: 60, gap: Spacing.md },
   emptyTitle: { fontSize: FontSize.lg, fontWeight: '600', color: Colors.textSecondary },
   emptyText: { fontSize: FontSize.md, color: Colors.textMuted, textAlign: 'center', paddingHorizontal: 40 },
-  modalOverlay: {
-    flex: 1, justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.6)',
-  },
-  modalContent: {
-    backgroundColor: Colors.backgroundLight,
-    borderTopLeftRadius: BorderRadius.xxl, borderTopRightRadius: BorderRadius.xxl,
-    padding: Spacing.xxl, paddingBottom: Platform.OS === 'ios' ? 40 : Spacing.xxl,
-  },
-  modalHandle: {
-    width: 40, height: 4, borderRadius: 2,
-    backgroundColor: Colors.textMuted, alignSelf: 'center', marginBottom: Spacing.xl,
-  },
-  modalTitle: { fontSize: FontSize.xl, fontWeight: '700', color: Colors.textPrimary, marginBottom: Spacing.xxl },
-  inputGroup: { marginBottom: Spacing.xl },
+
+  // Modal Form
+  modalTitle: { fontSize: FontSize.xl, fontWeight: '700', color: Colors.textPrimary, marginBottom: Spacing.xl, marginTop: Spacing.sm },
+  inputGroup: { marginBottom: Spacing.lg },
   inputLabel: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textSecondary, marginBottom: Spacing.sm },
   input: {
     backgroundColor: Colors.cardBg, borderRadius: BorderRadius.md,
@@ -291,27 +356,17 @@ const styles = StyleSheet.create({
   },
   freqRow: { flexDirection: 'row', gap: Spacing.sm },
   freqBtn: {
-    flex: 1, paddingVertical: Spacing.md, borderRadius: BorderRadius.md,
+    flex: 1, paddingVertical: 10, borderRadius: BorderRadius.md,
     backgroundColor: Colors.cardBg, alignItems: 'center',
     borderWidth: 1, borderColor: Colors.border,
   },
-  freqBtnActive: {
-    borderColor: Colors.neonPurple, backgroundColor: Colors.neonPurple + '20',
-  },
+  freqBtnActive: { borderColor: Colors.neonPurple, backgroundColor: Colors.neonPurple + '20' },
   freqBtnText: { fontSize: FontSize.sm, color: Colors.textMuted, fontWeight: '500' },
   freqBtnTextActive: { color: Colors.neonPurple },
-  modalActions: {
-    flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.lg,
-  },
-  cancelBtn: {
-    flex: 1, paddingVertical: Spacing.lg, borderRadius: BorderRadius.lg,
-    backgroundColor: Colors.cardBg, alignItems: 'center',
-    borderWidth: 1, borderColor: Colors.border,
-  },
-  cancelBtnText: { fontSize: FontSize.md, fontWeight: '600', color: Colors.textSecondary },
+  modalActions: { marginTop: Spacing.xl },
   saveBtn: {
-    flex: 1, paddingVertical: Spacing.lg, borderRadius: BorderRadius.lg,
-    alignItems: 'center',
+    height: 50, borderRadius: BorderRadius.lg,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
   },
   saveBtnText: { fontSize: FontSize.md, fontWeight: '700', color: '#fff' },
 });

@@ -8,13 +8,59 @@ import { useAuth } from '../../services/AuthContext';
 import { useBudget } from '../../services/BudgetContext';
 import { Colors, FontSize, BorderRadius, Spacing, Shadow } from '../../constants/theme';
 import { formatCurrency } from '../../services/AIEngine';
+import SwipeModal from '../../components/SwipeModal';
 
-const CURRENCIES = ['₺', '$', '€', '£'];
+const CURRENCY_LIST = [
+  { symbol: '₺', label: 'Türk Lirası (TRY)' },
+  { symbol: '$', label: 'Amerikan Doları (USD)' },
+  { symbol: '€', label: 'Euro (EUR)' },
+  { symbol: '£', label: 'İngiliz Sterlini (GBP)' },
+];
+
+const CustomSwitch = ({ enabled, onToggle, activeColor = Colors.neonGreen }: { enabled: boolean, onToggle: () => void, activeColor?: string }) => {
+  const animValue = useRef(new Animated.Value(enabled ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.spring(animValue, {
+      toValue: enabled ? 1 : 0,
+      useNativeDriver: false, // Color interpolation cannot use native driver
+      bounciness: 8,
+      speed: 14,
+    }).start();
+  }, [enabled]);
+
+  const trackColor = animValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [Colors.textMuted + '40', activeColor + '30'],
+  });
+
+  const thumbColor = animValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [Colors.textMuted, activeColor],
+  });
+
+  const translateX = animValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [3, 23], // 48 (track width) - 22 (thumb size) - 3 (padding)
+  });
+
+  return (
+    <TouchableOpacity activeOpacity={0.8} onPress={onToggle}>
+      <Animated.View style={[styles.customToggleTrack, { backgroundColor: trackColor }]}>
+        <Animated.View style={[styles.customToggleThumb, { backgroundColor: thumbColor, transform: [{ translateX }] }]} />
+      </Animated.View>
+    </TouchableOpacity>
+  );
+};
 
 export default function ProfileScreen() {
   const { user, logout, updateProfile } = useAuth();
   const { incomes, expenses, summary } = useBudget();
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [aiEnabled, setAiEnabled] = useState(true);
+  const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
@@ -27,10 +73,9 @@ export default function ProfileScreen() {
     ]);
   };
 
-  const handleCurrencyChange = () => {
-    const currentIndex = CURRENCIES.indexOf(user?.currency || '₺');
-    const nextCurrency = CURRENCIES[(currentIndex + 1) % CURRENCIES.length];
-    updateProfile({ currency: nextCurrency });
+  const handleCurrencyChange = (symbol: string) => {
+    updateProfile({ currency: symbol });
+    setCurrencyModalVisible(false);
   };
 
   const memberSince = user?.createdAt
@@ -93,7 +138,7 @@ export default function ProfileScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Ayarlar</Text>
 
-            <TouchableOpacity style={styles.settingRow} onPress={handleCurrencyChange}>
+            <TouchableOpacity style={styles.settingRow} onPress={() => setCurrencyModalVisible(true)}>
               <View style={styles.settingLeft}>
                 <View style={[styles.settingIconBg, { backgroundColor: Colors.neonCyan + '20' }]}>
                   <Ionicons name="cash-outline" size={20} color={Colors.neonCyan} />
@@ -108,35 +153,51 @@ export default function ProfileScreen() {
               </View>
             </TouchableOpacity>
 
-            <View style={styles.settingRow}>
+            <TouchableOpacity
+              style={styles.settingRow}
+              activeOpacity={0.7}
+              onPress={() => setNotificationsEnabled(!notificationsEnabled)}
+            >
               <View style={styles.settingLeft}>
                 <View style={[styles.settingIconBg, { backgroundColor: Colors.neonOrange + '20' }]}>
                   <Ionicons name="notifications-outline" size={20} color={Colors.neonOrange} />
                 </View>
                 <View>
                   <Text style={styles.settingLabel}>Bildirimler</Text>
-                  <Text style={styles.settingValue}>Ödeme hatırlatmaları aktif</Text>
+                  <Text style={styles.settingValue}>
+                    {notificationsEnabled ? 'Ödeme hatırlatmaları aktif' : 'Bildirimler kapalı'}
+                  </Text>
                 </View>
               </View>
-              <View style={[styles.toggleTrack, styles.toggleActive]}>
-                <View style={[styles.toggleThumb, styles.toggleThumbActive]} />
-              </View>
-            </View>
+              <CustomSwitch
+                enabled={notificationsEnabled}
+                onToggle={() => setNotificationsEnabled(!notificationsEnabled)}
+                activeColor={Colors.neonOrange}
+              />
+            </TouchableOpacity>
 
-            <View style={styles.settingRow}>
+            <TouchableOpacity
+              style={styles.settingRow}
+              activeOpacity={0.7}
+              onPress={() => setAiEnabled(!aiEnabled)}
+            >
               <View style={styles.settingLeft}>
                 <View style={[styles.settingIconBg, { backgroundColor: Colors.neonPurple + '20' }]}>
                   <Ionicons name="sparkles-outline" size={20} color={Colors.neonPurple} />
                 </View>
                 <View>
                   <Text style={styles.settingLabel}>AI Öneriler</Text>
-                  <Text style={styles.settingValue}>Kişiselleştirilmiş analiz aktif</Text>
+                  <Text style={styles.settingValue}>
+                    {aiEnabled ? 'Kişiselleştirilmiş analiz aktif' : 'AI önerileri kapalı'}
+                  </Text>
                 </View>
               </View>
-              <View style={[styles.toggleTrack, styles.toggleActive]}>
-                <View style={[styles.toggleThumb, styles.toggleThumbActive]} />
-              </View>
-            </View>
+              <CustomSwitch
+                enabled={aiEnabled}
+                onToggle={() => setAiEnabled(!aiEnabled)}
+                activeColor={Colors.neonPurple}
+              />
+            </TouchableOpacity>
           </View>
 
           {/* App Info */}
@@ -165,6 +226,33 @@ export default function ProfileScreen() {
           <View style={{ height: 120 }} />
         </Animated.View>
       </ScrollView>
+
+      {/* Para Birimi Modal */}
+      <SwipeModal visible={currencyModalVisible} onClose={() => setCurrencyModalVisible(false)} maxHeightPercent={60}>
+        <Text style={styles.modalTitle}>Para Birimi Seçin</Text>
+        <Text style={styles.modalSubtitle}>Uygulama genelinde kullanılacak varsayılan dövizi seçin</Text>
+        <View style={styles.currencyList}>
+          {CURRENCY_LIST.map((item) => {
+            const isSelected = user?.currency === item.symbol;
+            return (
+              <TouchableOpacity
+                key={item.symbol}
+                style={[styles.currencyRow, isSelected && styles.currencyRowSelected]}
+                onPress={() => handleCurrencyChange(item.symbol)}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.currencySymbolBg, isSelected && { backgroundColor: Colors.neonCyan + '20' }]}>
+                  <Text style={styles.currencySymbol}>{item.symbol}</Text>
+                </View>
+                <Text style={[styles.currencyLabel, isSelected && { color: Colors.textPrimary, fontWeight: '700' }]}>
+                  {item.label}
+                </Text>
+                {isSelected && <Ionicons name="checkmark-circle" size={24} color={Colors.neonCyan} />}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </SwipeModal>
     </View>
   );
 }
@@ -266,21 +354,13 @@ const styles = StyleSheet.create({
   currencyText: {
     fontSize: FontSize.lg, fontWeight: '800', color: Colors.neonCyan,
   },
-  toggleTrack: {
+  customToggleTrack: {
     width: 48, height: 28, borderRadius: 14,
-    backgroundColor: Colors.textMuted + '40',
-    justifyContent: 'center', padding: 3,
+    justifyContent: 'center',
   },
-  toggleActive: {
-    backgroundColor: Colors.neonGreen + '30',
-  },
-  toggleThumb: {
+  customToggleThumb: {
     width: 22, height: 22, borderRadius: 11,
-    backgroundColor: Colors.textMuted,
-  },
-  toggleThumbActive: {
-    backgroundColor: Colors.neonGreen,
-    alignSelf: 'flex-end',
+    position: 'absolute',
   },
   logoutBtn: {
     flexDirection: 'row',
@@ -296,4 +376,23 @@ const styles = StyleSheet.create({
   logoutText: {
     fontSize: FontSize.md, fontWeight: '700', color: Colors.danger,
   },
+  
+  // Modal ve List Stilleri
+  modalTitle: { fontSize: FontSize.xl, fontWeight: '700', color: Colors.textPrimary, marginTop: Spacing.sm },
+  modalSubtitle: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 4, marginBottom: Spacing.lg },
+  currencyList: { gap: Spacing.sm },
+  currencyRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    padding: Spacing.md, borderRadius: BorderRadius.lg,
+    backgroundColor: Colors.cardBg, borderWidth: 1, borderColor: Colors.border,
+  },
+  currencyRowSelected: {
+    borderColor: Colors.neonCyan + '50', backgroundColor: Colors.neonCyan + '10',
+  },
+  currencySymbolBg: {
+    width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.textMuted + '20',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  currencySymbol: { fontSize: FontSize.lg, fontWeight: '800', color: Colors.textPrimary },
+  currencyLabel: { flex: 1, fontSize: FontSize.md, color: Colors.textSecondary },
 });
